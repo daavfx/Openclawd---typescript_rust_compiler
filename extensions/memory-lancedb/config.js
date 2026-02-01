@@ -1,0 +1,84 @@
+import { Type } from "@sinclair/typebox";
+import fs from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+export 
+export const MEMORY_CATEGORIES = ["preference", "fact", "decision", "entity", "other"]
+export 
+const DEFAULT_MODEL = "text-embedding-3-small";
+const LEGACY_STATE_DIRS = [];
+function resolveDefaultDbPath() {
+  const home = homedir();
+  const preferred = join(home, ".openclaw", "memory", "lancedb");
+  try {
+    {
+      if (fs.existsSync(preferred)) {
+        return preferred;
+      }
+    }
+  }
+  catch {
+    {
+    }
+  }
+  for (const legacy of LEGACY_STATE_DIRS) {
+    const candidate = join(home, legacy, "memory", "lancedb");
+    try {
+      {
+        if (fs.existsSync(candidate)) {
+          return candidate;
+        }
+      }
+    }
+    catch {
+      {
+      }
+    }
+  }
+  return preferred;
+}
+const DEFAULT_DB_PATH = resolveDefaultDbPath();
+const EMBEDDING_DIMENSIONS = { "text-embedding-3-small": 1536, "text-embedding-3-large": 3072 };
+function assertAllowedKeys(value, allowed, label) {
+  const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
+  if ((unknown.length === 0)) {
+    return;
+  }
+  throw new Error(" has unknown keys: ");
+}
+export function vectorDimsForModel(model) {
+  const dims = EMBEDDING_DIMENSIONS[model];
+  if (!dims) {
+    throw new Error("Unsupported embedding model: ");
+  }
+  return dims;
+}
+
+function resolveEnvVars(value) {
+  return value.replace(/\$\{([^}]+)\}/g, (_, envVar) => {
+    const envValue = process.env[envVar];
+    if (!envValue) {
+      throw new Error("Environment variable  is not set");
+    }
+    return envValue;
+  });
+}
+function resolveEmbeddingModel(embedding) {
+  const model = (typeof embedding.model === "string") ? embedding.model : DEFAULT_MODEL;
+  vectorDimsForModel(model);
+  return model;
+}
+export const memoryConfigSchema = { parse: function(value) {
+  if (((!value || (typeof value !== "object")) || Array.isArray(value))) {
+    throw new Error("memory config required");
+  }
+  const cfg = value;
+  assertAllowedKeys(cfg, ["embedding", "dbPath", "autoCapture", "autoRecall"], "memory config");
+  const embedding = cfg.embedding;
+  if ((!embedding || (typeof embedding.apiKey !== "string"))) {
+    throw new Error("embedding.apiKey is required");
+  }
+  assertAllowedKeys(embedding, ["apiKey", "model"], "embedding config");
+  const model = resolveEmbeddingModel(embedding);
+  return { embedding: { provider: "openai", model, apiKey: resolveEnvVars(embedding.apiKey) }, dbPath: (typeof cfg.dbPath === "string") ? cfg.dbPath : DEFAULT_DB_PATH, autoCapture: (cfg.autoCapture !== false), autoRecall: (cfg.autoRecall !== false) };
+}, uiHints: { "embedding.apiKey": { label: "OpenAI API Key", sensitive: true, placeholder: "sk-proj-...", help: "API key for OpenAI embeddings (or use ${OPENAI_API_KEY})" }, "embedding.model": { label: "Embedding Model", placeholder: DEFAULT_MODEL, help: "OpenAI embedding model to use" }, dbPath: { label: "Database Path", placeholder: "~/.openclaw/memory/lancedb", advanced: true }, autoCapture: { label: "Auto-Capture", help: "Automatically capture important information from conversations" }, autoRecall: { label: "Auto-Recall", help: "Automatically inject relevant memories into context" } } }

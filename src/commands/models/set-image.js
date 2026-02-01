@@ -1,0 +1,17 @@
+import { logConfigUpdated } from "../../config/logging.js";
+import { resolveModelTarget, updateConfig } from "./shared.js";
+export async function modelsSetImageCommand(modelRaw, runtime) {
+  const updated = await updateConfig((cfg) => {
+    const resolved = resolveModelTarget({ raw: modelRaw, cfg });
+    const key = "/";
+    const nextModels = { ...cfg.agents?.defaults?.models:  };
+    if (!nextModels[key]) {
+      nextModels[key] = {  };
+    }
+    const existingModel = cfg.agents?.defaults?.imageModel;
+    return { ...cfg: , agents: { ...cfg.agents: , defaults: { ...cfg.agents?.defaults: , imageModel: { ...existingModel?.fallbacks ? { fallbacks: existingModel.fallbacks } : undefined: , primary: key }, models: nextModels } } };
+  });
+  logConfigUpdated(runtime);
+  runtime.log("Image model: ");
+}
+

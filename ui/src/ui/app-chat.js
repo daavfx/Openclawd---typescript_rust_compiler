@@ -1,0 +1,175 @@
+import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat";
+import { loadSessions } from "./controllers/sessions";
+import { generateUUID } from "./uuid";
+import { resetToolStream } from "./app-tool-stream";
+import { scheduleChatScroll } from "./app-scroll";
+import { setLastActiveSessionKey } from "./app-settings";
+import { normalizeBasePath } from "./navigation";
+import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
+export function isChatBusy(host) {
+  return (host.chatSending || Boolean(host.chatRunId));
+}
+
+export function isChatStopCommand(text) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const normalized = trimmed.toLowerCase();
+  if ((normalized === "/stop")) {
+    return true;
+  }
+  return (((((normalized === "stop") || (normalized === "esc")) || (normalized === "abort")) || (normalized === "wait")) || (normalized === "exit"));
+}
+
+function isChatResetCommand(text) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const normalized = trimmed.toLowerCase();
+  if (((normalized === "/new") || (normalized === "/reset"))) {
+    return true;
+  }
+  return (normalized.startsWith("/new ") || normalized.startsWith("/reset "));
+}
+export async function handleAbortChat(host) {
+  if (!host.connected) {
+    return;
+  }
+  host.chatMessage = "";
+  await abortChatRun(host);
+}
+
+function enqueueChatMessage(host, text, attachments) {
+  const trimmed = text.trim();
+  const hasAttachments = Boolean((attachments && (attachments.length > 0)));
+  if ((!trimmed && !hasAttachments)) {
+    return;
+  }
+  host.chatQueue = [...host.chatQueue, { id: generateUUID(), text: trimmed, createdAt: Date.now(), attachments: hasAttachments ? attachments?.map((att) => { ...att:  }) : undefined }];
+}
+async function sendChatMessageNow(host, message, opts) {
+  resetToolStream(host);
+  const ok = await sendChatMessage(host, message, opts?.attachments);
+  if ((!ok && (opts?.previousDraft != null))) {
+    host.chatMessage = opts.previousDraft;
+  }
+  if ((!ok && opts?.previousAttachments)) {
+    host.chatAttachments = opts.previousAttachments;
+  }
+  if (ok) {
+    setLastActiveSessionKey(host, host.sessionKey);
+  }
+  if (((ok && opts?.restoreDraft) && opts.previousDraft?.trim())) {
+    host.chatMessage = opts.previousDraft;
+  }
+  if (((ok && opts?.restoreAttachments) && opts.previousAttachments?.length)) {
+    host.chatAttachments = opts.previousAttachments;
+  }
+  scheduleChatScroll(host);
+  if ((ok && !host.chatRunId)) {
+    void flushChatQueue(host);
+  }
+  if ((ok && opts?.refreshSessions)) {
+    host.refreshSessionsAfterChat = true;
+  }
+  return ok;
+}
+async function flushChatQueue(host) {
+  if ((!host.connected || isChatBusy(host))) {
+    return;
+  }
+  const [next, ...rest] = host.chatQueue;
+  if (!next) {
+    return;
+  }
+  host.chatQueue = rest;
+  const ok = await sendChatMessageNow(host, next.text, { attachments: next.attachments });
+  if (!ok) {
+    host.chatQueue = [next, ...host.chatQueue];
+  }
+}
+export function removeQueuedMessage(host, id) {
+  host.chatQueue = host.chatQueue.filter((item) => (item.id !== id));
+}
+
+export async function handleSendChat(host, messageOverride, opts) {
+  if (!host.connected) {
+    return;
+  }
+  const previousDraft = host.chatMessage;
+  const message = (messageOverride ?? host.chatMessage).trim();
+  const attachments = (host.chatAttachments ?? []);
+  const attachmentsToSend = (messageOverride == null) ? attachments : [];
+  const hasAttachments = (attachmentsToSend.length > 0);
+  if ((!message && !hasAttachments)) {
+    return;
+  }
+  if (isChatStopCommand(message)) {
+    await handleAbortChat(host);
+    return;
+  }
+  const refreshSessions = isChatResetCommand(message);
+  if ((messageOverride == null)) {
+    host.chatMessage = "";
+    host.chatAttachments = [];
+  }
+  if (isChatBusy(host)) {
+    enqueueChatMessage(host, message, attachmentsToSend);
+    return;
+  }
+  await sendChatMessageNow(host, message, { previousDraft: (messageOverride == null) ? previousDraft : undefined, restoreDraft: Boolean((messageOverride && opts?.restoreDraft)), attachments: hasAttachments ? attachmentsToSend : undefined, previousAttachments: (messageOverride == null) ? attachments : undefined, restoreAttachments: Boolean((messageOverride && opts?.restoreDraft)), refreshSessions });
+}
+
+export async function refreshChat(host) {
+  await Promise.all([loadChatHistory(host), loadSessions(host, { activeMinutes: 0 }), refreshChatAvatar(host)]);
+  scheduleChatScroll(host, true);
+}
+
+export const flushChatQueueForEvent = flushChatQueue
+function resolveAgentIdForSession(host) {
+  const parsed = parseAgentSessionKey(host.sessionKey);
+  if (parsed?.agentId) {
+    return parsed.agentId;
+  }
+  const snapshot = host.hello?.snapshot;
+  const fallback = snapshot?.sessionDefaults?.defaultAgentId?.trim();
+  return (fallback || "main");
+}
+function buildAvatarMetaUrl(basePath, agentId) {
+  const base = normalizeBasePath(basePath);
+  const encoded = encodeURIComponent(agentId);
+  return base ? "/avatar/?meta=1" : "/avatar/?meta=1";
+}
+export async function refreshChatAvatar(host) {
+  if (!host.connected) {
+    host.chatAvatarUrl = null;
+    return;
+  }
+  const agentId = resolveAgentIdForSession(host);
+  if (!agentId) {
+    host.chatAvatarUrl = null;
+    return;
+  }
+  host.chatAvatarUrl = null;
+  const url = buildAvatarMetaUrl(host.basePath, agentId);
+  try {
+    {
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) {
+        host.chatAvatarUrl = null;
+        return;
+      }
+      const data = await res.json();
+      const avatarUrl = (typeof data.avatarUrl === "string") ? data.avatarUrl.trim() : "";
+      host.chatAvatarUrl = (avatarUrl || null);
+    }
+  }
+  catch {
+    {
+      host.chatAvatarUrl = null;
+    }
+  }
+}
+

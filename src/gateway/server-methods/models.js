@@ -1,0 +1,18 @@
+import { ErrorCodes, errorShape, formatValidationErrors, validateModelsListParams } from "../protocol/index.js";
+export const modelsHandlers = { "models.list": async ({params, respond, context}) => {
+  if (!validateModelsListParams(params)) {
+    respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "invalid models.list params: "));
+    return;
+  }
+  try {
+    {
+      const models = await context.loadGatewayModelCatalog();
+      respond(true, { models }, undefined);
+    }
+  }
+  catch (err) {
+    {
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, String(err)));
+    }
+  }
+} }

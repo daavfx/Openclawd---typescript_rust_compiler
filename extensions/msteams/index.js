@@ -1,0 +1,7 @@
+import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
+import { msteamsPlugin } from "./src/channel.js";
+import { setMSTeamsRuntime } from "./src/runtime.js";
+const plugin = { id: "msteams", name: "Microsoft Teams", description: "Microsoft Teams channel plugin (Bot Framework)", configSchema: emptyPluginConfigSchema(), register: function(api) {
+  setMSTeamsRuntime(api.runtime);
+  api.registerChannel({ plugin: msteamsPlugin });
+} };

@@ -1,0 +1,26 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildPairingReply } from "./pairing-messages.js";
+describe("buildPairingReply", () => {
+  let previousProfile;
+  beforeEach(() => {
+    previousProfile = process.env.OPENCLAW_PROFILE;
+    process.env.OPENCLAW_PROFILE = "isolated";
+  });
+  afterEach(() => {
+    if ((previousProfile === undefined)) {
+      delete process.env.OPENCLAW_PROFILE;
+      return;
+    }
+    process.env.OPENCLAW_PROFILE = previousProfile;
+  });
+  const cases = [{ channel: "discord", idLine: "Your Discord user id: 1", code: "ABC123" }, { channel: "slack", idLine: "Your Slack user id: U1", code: "DEF456" }, { channel: "signal", idLine: "Your Signal number: +15550001111", code: "GHI789" }, { channel: "imessage", idLine: "Your iMessage sender id: +15550002222", code: "JKL012" }, { channel: "whatsapp", idLine: "Your WhatsApp phone number: +15550003333", code: "MNO345" }];
+  for (const testCase of cases) {
+    it("formats pairing reply for ", () => {
+      const text = buildPairingReply(testCase);
+      expect(text).toContain(testCase.idLine);
+      expect(text).toContain("Pairing code: ");
+      const commandRe = new RegExp("(?:openclaw|openclaw) --profile isolated pairing approve  <code>");
+      expect(text).toMatch(commandRe);
+    });
+  }
+});

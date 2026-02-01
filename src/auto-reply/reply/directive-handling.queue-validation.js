@@ -1,0 +1,38 @@
+import { withOptions } from "./directive-handling.shared.js";
+import { resolveQueueSettings } from "./queue.js";
+export function maybeHandleQueueDirective(params) {
+  const {directives} = params;
+  if (!directives.hasQueueDirective) {
+    return undefined;
+  }
+  const wantsStatus = ((((((!directives.queueMode && !directives.queueReset) && !directives.hasQueueOptions) && (directives.rawQueueMode === undefined)) && (directives.rawDebounce === undefined)) && (directives.rawCap === undefined)) && (directives.rawDrop === undefined));
+  if (wantsStatus) {
+    const settings = resolveQueueSettings({ cfg: params.cfg, channel: params.channel, sessionEntry: params.sessionEntry });
+    const debounceLabel = (typeof settings.debounceMs === "number") ? "ms" : "default";
+    const capLabel = (typeof settings.cap === "number") ? String(settings.cap) : "default";
+    const dropLabel = (settings.dropPolicy ?? "default");
+    return { text: withOptions("Current queue settings: mode=, debounce=, cap=, drop=.", "modes steer, followup, collect, steer+backlog, interrupt; debounce:<ms|s|m>, cap:<n>, drop:old|new|summarize") };
+  }
+  const queueModeInvalid = ((!directives.queueMode && !directives.queueReset) && Boolean(directives.rawQueueMode));
+  const queueDebounceInvalid = ((directives.rawDebounce !== undefined) && (typeof directives.debounceMs !== "number"));
+  const queueCapInvalid = ((directives.rawCap !== undefined) && (typeof directives.cap !== "number"));
+  const queueDropInvalid = ((directives.rawDrop !== undefined) && !directives.dropPolicy);
+  if ((((queueModeInvalid || queueDebounceInvalid) || queueCapInvalid) || queueDropInvalid)) {
+    const errors = [];
+    if (queueModeInvalid) {
+      errors.push("Unrecognized queue mode \"\". Valid modes: steer, followup, collect, steer+backlog, interrupt.");
+    }
+    if (queueDebounceInvalid) {
+      errors.push("Invalid debounce \"\". Use ms/s/m (e.g. debounce:1500ms, debounce:2s).");
+    }
+    if (queueCapInvalid) {
+      errors.push("Invalid cap \"\". Use a positive integer (e.g. cap:10).");
+    }
+    if (queueDropInvalid) {
+      errors.push("Invalid drop policy \"\". Use drop:old, drop:new, or drop:summarize.");
+    }
+    return { text: errors.join(" ") };
+  }
+  return undefined;
+}
+

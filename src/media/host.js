@@ -1,0 +1,50 @@
+import fs from "node:fs/promises";
+import { ensurePortAvailable, PortInUseError } from "../infra/ports.js";
+import { getTailnetHostname } from "../infra/tailscale.js";
+import { logInfo } from "../logger.js";
+import { defaultRuntime } from "../runtime.js";
+import { formatCliCommand } from "../cli/command-format.js";
+import { startMediaServer } from "./server.js";
+import { saveMediaSource } from "./store.js";
+const DEFAULT_PORT = 42873;
+const TTL_MS = ((2 * 60) * 1000);
+let mediaServer = null;
+export 
+export async function ensureMediaHosted(source, opts = {  }) {
+  const port = (opts.port ?? DEFAULT_PORT);
+  const runtime = (opts.runtime ?? defaultRuntime);
+  const saved = await saveMediaSource(source);
+  const hostname = await getTailnetHostname();
+  const needsServerStart = await isPortFree(port);
+  if ((needsServerStart && !opts.startServer)) {
+    await fs.rm(saved.path).catch(() => {
+    });
+    throw new Error("Media hosting requires the webhook/Funnel server. Start ``/`` or re-run with --serve-media.");
+  }
+  if ((needsServerStart && opts.startServer)) {
+    if (!mediaServer) {
+      mediaServer = await startMediaServer(port, TTL_MS, runtime);
+      logInfo("🦞 Started temporary media host on http://localhost:/media/:id (TTL s)", runtime);
+      mediaServer.unref?.();
+    }
+  }
+  const url = "https:///media/";
+  return { url, id: saved.id, size: saved.size };
+}
+
+async function isPortFree(port) {
+  try {
+    {
+      await ensurePortAvailable(port);
+      return true;
+    }
+  }
+  catch (err) {
+    {
+      if ((err instanceof PortInUseError)) {
+        return false;
+      }
+      throw err;
+    }
+  }
+}

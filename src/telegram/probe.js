@@ -1,0 +1,59 @@
+import { makeProxyFetch } from "./proxy.js";
+const TELEGRAM_API_BASE = "https://api.telegram.org";
+export 
+async function fetchWithTimeout(url, timeoutMs, fetcher) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    {
+      return await fetcher(url, { signal: controller.signal });
+    }
+  }
+  finally {
+    {
+      clearTimeout(timer);
+    }
+  }
+}
+export async function probeTelegram(token, timeoutMs, proxyUrl) {
+  const started = Date.now();
+  const fetcher = proxyUrl ? makeProxyFetch(proxyUrl) : fetch;
+  const base = "/bot";
+  const result = { ok: false, status: null, error: null, elapsedMs: 0 };
+  try {
+    {
+      const meRes = await fetchWithTimeout("/getMe", timeoutMs, fetcher);
+      const meJson = await meRes.json();
+      if ((!meRes.ok || !meJson?.ok)) {
+        result.status = meRes.status;
+        result.error = (meJson?.description ?? "getMe failed ()");
+        return { ...result: , elapsedMs: (Date.now() - started) };
+      }
+      result.bot = { id: (meJson.result?.id ?? null), username: (meJson.result?.username ?? null), canJoinGroups: (typeof meJson.result?.can_join_groups === "boolean") ? meJson.result?.can_join_groups : null, canReadAllGroupMessages: (typeof meJson.result?.can_read_all_group_messages === "boolean") ? meJson.result?.can_read_all_group_messages : null, supportsInlineQueries: (typeof meJson.result?.supports_inline_queries === "boolean") ? meJson.result?.supports_inline_queries : null };
+      try {
+        {
+          const webhookRes = await fetchWithTimeout("/getWebhookInfo", timeoutMs, fetcher);
+          const webhookJson = await webhookRes.json();
+          if ((webhookRes.ok && webhookJson?.ok)) {
+            result.webhook = { url: (webhookJson.result?.url ?? null), hasCustomCert: (webhookJson.result?.has_custom_certificate ?? null) };
+          }
+        }
+      }
+      catch {
+        {
+        }
+      }
+      result.ok = true;
+      result.status = null;
+      result.error = null;
+      result.elapsedMs = (Date.now() - started);
+      return result;
+    }
+  }
+  catch (err) {
+    {
+      return { ...result: , status: (err instanceof Response) ? err.status : result.status, error: (err instanceof Error) ? err.message : String(err), elapsedMs: (Date.now() - started) };
+    }
+  }
+}
+

@@ -1,0 +1,29 @@
+import fs from "node:fs";
+import path from "node:path";
+export function loadJsonFile(pathname) {
+  try {
+    {
+      if (!fs.existsSync(pathname)) {
+        return undefined;
+      }
+      const raw = fs.readFileSync(pathname, "utf8");
+      return JSON.parse(raw);
+    }
+  }
+  catch {
+    {
+      return undefined;
+    }
+  }
+}
+
+export function saveJsonFile(pathname, data) {
+  const dir = path.dirname(pathname);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true, mode: 448 });
+  }
+  fs.writeFileSync(pathname, "
+", "utf8");
+  fs.chmodSync(pathname, 384);
+}
+
